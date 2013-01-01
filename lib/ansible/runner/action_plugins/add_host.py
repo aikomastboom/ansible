@@ -20,7 +20,7 @@ import ansible
 from ansible.callbacks import vv
 from ansible.errors import AnsibleError as ae
 from ansible.runner.return_data import ReturnData
-from ansible.utils import parse_kv, template
+from ansible.utils import parse_kv, template, check_conditional
 from ansible.inventory.host import Host
 from ansible.inventory.group import Group
 
@@ -39,32 +39,36 @@ class ActionModule(object):
         if not 'hostname' in args:
             raise ae("'hostname' is a required argument.")
 
+        hostname = args['hostname']
+
+        if not check_conditional(template(self.runner.basedir, self.runner.conditional, inject)):
+            return ReturnData(conn=conn, result={'skipped': True})
+
+        result = {'changed': False}
+
         vv("created 'add_host' ActionModule: hostname=%s"%(args['hostname']))
 
-
-        result = {'changed': True}
-
-        new_host = Host(args['hostname'])
+        new_host = Host(hostname)
         inventory = self.runner.inventory
-        
+
         # add the new host to the 'all' group
         allgroup = inventory.get_group('all')
         allgroup.add_host(new_host)
         result['changed'] = True
-        
+
         # add it to the group if that was specified
         if 'groupname' in args:
             if not inventory.get_group(args['groupname']):
                 new_group = Group(args['groupname'])
                 inventory.add_group(new_group)
-                
+
             ngobj = inventory.get_group(args['groupname'])
             ngobj.add_host(new_host)
             vv("created 'add_host' ActionModule: groupname=%s"%(args['groupname']))
             result['new_group'] = args['groupname']
-            
+
         result['new_host'] = args['hostname']
-        
+
         return ReturnData(conn=conn, comm_ok=True, result=result)
 
 
