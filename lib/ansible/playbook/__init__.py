@@ -91,6 +91,7 @@ class PlayBook(object):
         if only_tags is None:
             only_tags = [ 'all' ]
 
+        self.host_list        = host_list
         self.module_path      = module_path
         self.forks            = forks
         self.timeout          = timeout
@@ -366,6 +367,7 @@ class PlayBook(object):
 
         # push any variables down to the system
         setup_results = ansible.runner.Runner(
+            host_list = self.host_list,
             pattern=play.hosts, module_name='setup', module_args={}, inventory=self.inventory,
             forks=self.forks, module_path=self.module_path, timeout=self.timeout, remote_user=play.remote_user,
             remote_pass=self.remote_pass, remote_port=play.remote_port, private_key_file=self.private_key_file,

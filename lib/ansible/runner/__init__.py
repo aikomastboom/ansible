@@ -118,6 +118,7 @@ class Runner(object):
         ):
 
         # storage & defaults
+        self.host_list        = host_list
         self.setup_cache      = utils.default(setup_cache, lambda: collections.defaultdict(dict))
         self.basedir          = utils.default(basedir, lambda: os.getcwd())
         self.callbacks        = utils.default(callbacks, lambda: DefaultRunnerCallbacks())
@@ -271,6 +272,7 @@ class Runner(object):
         inject['hostvars'] = HostVars(self.setup_cache, self.inventory)
         inject['group_names'] = host_variables.get('group_names', [])
         inject['groups'] = self.inventory.groups_list()
+        inject['ansible_hosts'] = self.host_list
 
         # allow with_foo to work in playbooks...
         items = None
