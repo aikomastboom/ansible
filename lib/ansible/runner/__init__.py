@@ -637,7 +637,7 @@ class Runner(object):
         # run once per hostgroup, rather than pausing once per each
         # host.
         p = utils.plugins.action_loader.get(self.module_name, self)
-        if p and getattr(p, 'BYPASS_HOST_LOOP', None):
+        if p and getattr(p, 'BYPASS_HOST_LOOP', False):
             # Expose the current hostgroup to the bypassing plugins
             self.host_set = hosts
             # We aren't iterating over all the hosts in this
