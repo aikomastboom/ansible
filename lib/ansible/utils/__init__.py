@@ -22,7 +22,7 @@ import yaml
 import optparse
 import operator
 from ansible import errors
-from ansible import __version__
+from ansible import __version__,__author__
 from ansible.utils.template import *
 from ansible.utils.plugins import *
 import ansible.constants as C
@@ -333,6 +333,7 @@ def version(prog):
     gitinfo = _gitinfo()
     if gitinfo:
         result = result + " {0}".format(gitinfo)
+    result = result + " {0}".format(__author__)
     return result
 
 def getch():
