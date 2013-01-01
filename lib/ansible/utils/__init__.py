@@ -136,6 +136,11 @@ def is_failed(result):
 
     return ((result.get('rc', 0) != 0) or (result.get('failed', False) in [ True, 'True', 'true']))
 
+def is_changed(result):
+    ''' is a given JSON result a changed result? '''
+
+    return (result.get('changed', False) in [ True, 'True', 'true'])
+
 def check_conditional(conditional):
 
     def is_set(var):

@@ -192,6 +192,8 @@ class Task(object):
 
         # when: set $variable
         # when: unset $variable
+        # when: failed $json_result
+        # when: changed $json_result
         # when: int $x >= $z and $y < 3
         # when: int $x in $alist
         # when: float $x > 2 and $y <= $z
@@ -203,11 +205,29 @@ class Task(object):
         if len(tokens) < 2:
             raise errors.AnsibleError("invalid usage of when_ operator: %s" % expression)
 
-        # when_set / when_unset
+        # when_set / when_unset 
         if tokens[0] in [ 'set', 'unset' ]:
-            if len(tokens) != 2:
-                raise errors.AnsibleError("usage: when: <set|unset> <$variableName>")
-            return "is_%s('''%s''')" % (tokens[0], tokens[1])
+            tcopy = tokens[1:]
+            for (i,t) in enumerate(tokens[1:]):
+                if t.find("$") != -1:
+                    tcopy[i] = "is_%s('''%s''')" % (tokens[0], t)
+                else:
+                    tcopy[i] = t
+            return " ".join(tcopy)
+
+
+
+        # when_failed / when_changed
+        elif tokens[0] in [ 'failed', 'changed' ]:
+            tcopy = tokens[1:]
+            for (i,t) in enumerate(tokens[1:]):
+                if t.find("$") != -1:
+                    tcopy[i] = "is_%s(%s)" % (tokens[0], t)
+                else:
+                    tcopy[i] = t
+            return " ".join(tcopy)
+
+
 
         # when_integer / when_float / when_string
         elif tokens[0] in [ 'integer', 'float', 'string' ]:
