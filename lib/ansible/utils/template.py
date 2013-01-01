@@ -59,7 +59,7 @@ def _varFindLimitSpace(basedir, vars, space, part, lookup_fatal, depth):
         else:
             try:
                 space = space[m.group(1)][int(m.group(2))]
-            except (KeyError, IndexError):
+            except (KeyError, IndexError, TypeError):
                 return None
     else:
         return None
