@@ -25,6 +25,7 @@ from ansible import errors
 from ansible import __version__,__author__
 from ansible.utils.template import *
 from ansible.utils.plugins import *
+from ansible.color import stringc
 import ansible.constants as C
 import time
 import StringIO
@@ -144,7 +145,11 @@ def check_conditional(conditional):
         return var.startswith("$")
 
     try:
-        return eval(conditional.replace("\n", "\\n"))
+        result = eval(conditional.replace("\n", "\\n"))
+        if conditional != True and VERBOSITY > 3:
+            msg = 'check_conditional %s == %s' % (conditional, result)
+            print stringc(msg, 'bright blue')
+        return result
     except SyntaxError as e:
         raise errors.AnsibleError("Could not evaluate the expression: " + conditional)
 
