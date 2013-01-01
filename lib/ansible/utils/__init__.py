@@ -139,7 +139,7 @@ def is_failed(result):
 def is_changed(result):
     ''' is a given JSON result a changed result? '''
 
-    return (result.get('changed', False) in [ True, 'True', 'true'])
+    return result.get('changed', False)
 
 def check_conditional(conditional):
 
@@ -201,7 +201,9 @@ def parse_json(raw_data):
     data = filter_leading_non_json_lines(raw_data)
 
     try:
-        return json.loads(data)
+        results = json.loads(data)
+        if type(results) != dict:
+            return results
     except:
         # not JSON, but try "Baby JSON" which allows many of our modules to not
         # require JSON and makes writing modules in bash much simpler
@@ -216,17 +218,19 @@ def parse_json(raw_data):
             if t.find("=") == -1:
                 raise errors.AnsibleError("failed to parse: %s" % orig_data)
             (key,value) = t.split("=", 1)
-            if key == 'changed' or 'failed':
-                if value.lower() in [ 'true', '1' ]:
-                    value = True
-                elif value.lower() in [ 'false', '0' ]:
-                    value = False
-            if key == 'rc':
-                value = int(value)
             results[key] = value
         if len(results.keys()) == 0:
             return { "failed" : True, "parsed" : False, "msg" : orig_data }
-        return results
+
+    for (key, value) in results.iteritems():
+        if (key == 'changed' or key == 'failed') and type(value) in [ str, unicode ]:
+            if value.lower() in [ 'true', '1' ]:
+                results[key] = True
+            elif value.lower() in [ 'false', '0' ]:
+                results[key] = False
+        if key == 'rc':
+            results[key] = int(value)
+    return results
 
 def parse_yaml(data):
     ''' convert a yaml string to a data structure '''
