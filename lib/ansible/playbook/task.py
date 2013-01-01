@@ -205,7 +205,7 @@ class Task(object):
         if len(tokens) < 2:
             raise errors.AnsibleError("invalid usage of when_ operator: %s" % expression)
 
-        # when_set / when_unset 
+        # when_set / when_unset
         if tokens[0] in [ 'set', 'unset' ]:
             tcopy = tokens[1:]
             for (i,t) in enumerate(tokens[1:]):
