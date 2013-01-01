@@ -119,7 +119,12 @@ def main():
 
     stdout_json = ''
     try:
-        stdout_json = json.loads(out)
+        skipnode = "[Error: Cannot find module './DTraceProviderBindings']\n"
+        json_str = out
+        if out.startswith(skipnode):
+            json_str = out[len(skipnode):]
+            out = json_str
+        stdout_json = json.loads(json_str)
     except Exception, e:
         print e
 
