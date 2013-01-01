@@ -116,9 +116,17 @@ def main():
     if err is None:
         err = ''
 
+
+    stdout_json = ''
+    try:
+        stdout_json = json.loads(out)
+    except Exception, e:
+        print e
+
     module.exit_json(
         cmd     = args,
         stdout  = out.rstrip("\r\n"),
+        stdout_json = stdout_json,
         stderr  = err.rstrip("\r\n"),
         rc      = cmd.returncode,
         start   = str(startd),
