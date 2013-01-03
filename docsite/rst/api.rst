@@ -49,7 +49,8 @@ Detailed API Example
 
 The following script prints out the uptime information for all hosts::
 
-    #!/usr/bin/python
+    #!/usr/bin/env python
+
 
     import ansible.runner
     import sys
