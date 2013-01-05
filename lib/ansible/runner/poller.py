@@ -32,19 +32,26 @@ class AsyncPoller(object):
 
         # Get job id and which hosts to poll again in the future
         jid = None
+        # check for skipped tasks
+        one_skipped = False
+
         for (host, res) in results['contacted'].iteritems():
             if res.get('started', False):
                 self.hosts_to_poll.append(host)
                 jid = res.get('ansible_job_id', None)
             else:
+                if res.get('skipped', False):
+                    one_skipped = True
                 self.results['contacted'][host] = res
         for (host, res) in results['dark'].iteritems():
             self.results['dark'][host] = res
 
-        if jid is None:
+        if jid is None and not one_skipped:
             raise errors.AnsibleError("unexpected error: unable to determine jid")
-        if len(self.hosts_to_poll)==0:
-            raise errors.AnsibleErrot("unexpected error: no hosts to poll")
+
+        if len(self.hosts_to_poll)==0 and not one_skipped:
+            raise errors.AnsibleError("unexpected error: no hosts to poll")
+
         self.jid = jid
 
     def poll(self):

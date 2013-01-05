@@ -278,7 +278,9 @@ class PlayBook(object):
             self.stats.compute(results)
             if task.async_poll_interval > 0:
                 # if not polling, playbook requested fire and forget, so don't poll
-                results = self._async_poll(poller, task.async_seconds, task.async_poll_interval)
+                if poller.jid:
+                    # prevent skipped async tasks to start polling
+                    results = self._async_poll(poller, task.async_seconds, task.async_poll_interval)
 
         contacted = results.get('contacted',{})
         dark      = results.get('dark', {})
