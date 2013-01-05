@@ -1,4 +1,5 @@
-#!/usr/bin/python
+#!/usr/bin/env python
+
 # (c) 2012, Michael DeHaan <michael.dehaan@gmail.com>
 # example of getting the uptime of all hosts, 10 at a time
 
