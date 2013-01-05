@@ -126,8 +126,8 @@ def main():
             json_str = out[len(skipnode):]
             out = json_str
         stdout_json = json.loads(json_str)
-    except Exception, e:
-        print e
+    except Exception:
+        pass
 
     module.exit_json(
         cmd     = args,
