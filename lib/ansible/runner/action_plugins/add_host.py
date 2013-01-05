@@ -17,10 +17,10 @@
 
 import ansible
 
-from ansible.callbacks import vv
+from ansible.callbacks import vv, vvv
 from ansible.errors import AnsibleError as ae
 from ansible.runner.return_data import ReturnData
-from ansible.utils import parse_kv, template, check_conditional
+from ansible.utils import parse_kv, template, check_conditional, jsonify
 from ansible.inventory.host import Host
 from ansible.inventory.group import Group
 
@@ -38,6 +38,8 @@ class ActionModule(object):
         args = parse_kv(module_args)
         if not 'hostname' in args:
             raise ae("'hostname' is a required argument.")
+
+        vvv('inject\n%s' % jsonify(inject))
 
         hostname = args['hostname']
 
