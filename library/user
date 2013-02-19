@@ -49,7 +49,9 @@ options:
     groups:
         required: false
         description:
-            - Puts the user in this comma-delimited list of groups.
+            - Puts the user in this comma-delimited list of groups. When set to
+              the empty string ('groups='), the user is removed from all groups
+              except the primary group.
     append:
         required: false
         description:
@@ -224,10 +226,7 @@ class User(object):
             syslog.openlog('ansible-%s' % os.path.basename(__file__))
             syslog.syslog(syslog.LOG_NOTICE, 'Command %s' % '|'.join(cmd))
 
-        p = subprocess.Popen(cmd, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        (out, err) = p.communicate()
-        rc = p.returncode
-        return (rc, out, err)
+        return self.module.run_command(cmd)
 
     def remove_user_userdel(self):
         cmd = [self.module.get_bin_path('userdel', True)]
@@ -253,9 +252,10 @@ class User(object):
             cmd.append(self.group)
 
         if self.groups is not None:
-            for g in self.groups.split(','):
-                if not self.group_exists(g):
-                    self.module.fail_json(msg="Group %s does not exist" % (g))
+            if self.groups != '':
+                for g in self.groups.split(','):
+                    if not self.group_exists(g):
+                        self.module.fail_json(msg="Group %s does not exist" % (g))
             cmd.append('-G')
             cmd.append(self.groups)
 
@@ -305,31 +305,37 @@ class User(object):
 
         if self.groups is not None:
             current_groups = self.user_group_membership()
-            groups = self.groups.split(',')
-            for g in groups:
-                if not self.group_exists(g):
-                    self.module.fail_json(msg="Group %s does not exist" % (g))
-
-            group_diff = set(sorted(current_groups)).symmetric_difference(set(sorted(groups)))
             groups_need_mod = False
+            groups = []
 
-            if group_diff:
-                if self.append:
-                    for g in groups:
-                        if g in group_diff:
-                            cmd.append('-a')
-                            groups_need_mod = True
-                            break
-                else:
+            if self.groups == '':
+                if current_groups and not self.append:
                     groups_need_mod = True
+            else:
+                groups = self.groups.split(',')
+                for g in groups:
+                    if not self.group_exists(g):
+                        self.module.fail_json(msg="Group %s does not exist" % (g))
+
+                group_diff = set(sorted(current_groups)).symmetric_difference(set(sorted(groups)))
+
+                if group_diff:
+                    if self.append:
+                        for g in groups:
+                            if g in group_diff:
+                                cmd.append('-a')
+                                groups_need_mod = True
+                                break
+                    else:
+                        groups_need_mod = True
 
             if groups_need_mod:
                 cmd.append('-G')
                 cmd.append(','.join(groups))
 
         if self.comment is not None and info[4] != self.comment:
-                cmd.append('-c')
-                cmd.append(self.comment)
+            cmd.append('-c')
+            cmd.append(self.comment)
 
         if self.home is not None and info[5] != self.home:
             cmd.append('-d')
@@ -346,6 +352,8 @@ class User(object):
         # skip if no changes to be made
         if len(cmd) == 1:
             return (None, '', '')
+        elif self.module.check_mode:
+            return (True, '', '')
 
         cmd.append(self.name)
         return self.execute_command(cmd)
@@ -501,20 +509,24 @@ class FreeBsdUser(User):
     SHADOWFILE = '/etc/master.passwd'
 
     def remove_user(self):
-        cmd = [self.module.get_bin_path('pw', True),
-               'userdel',
-               '-n',
-               self.name ]
+        cmd = [
+            self.module.get_bin_path('pw', True),
+            'userdel',
+            '-n',
+            self.name
+        ]
         if self.remove:
             cmd.append('-r')
 
         return self.execute_command(cmd)
 
     def create_user(self):
-        cmd = [self.module.get_bin_path('pw', True),
-               'useradd',
-               '-n',
-               self.name ]
+        cmd = [
+            self.module.get_bin_path('pw', True),
+            'useradd',
+            '-n',
+            self.name 
+        ]
 
         if self.uid is not None:
             cmd.append('-u')
@@ -556,19 +568,23 @@ class FreeBsdUser(User):
 
         # we have to set the password in a second command
         if self.password is not None:
-            cmd = [self.module.get_bin_path('chpass', True),
-                   '-p',
-                   self.password,
-                   self.name ]
+            cmd = [
+                self.module.get_bin_path('chpass', True),
+                '-p',
+                self.password,
+                self.name 
+            ]
             return self.execute_command(cmd)
 
         return (rc, out, err)
 
     def modify_user(self):
-        cmd = [self.module.get_bin_path('pw', True),
-               'usermod',
-               '-n',
-               self.name ]
+        cmd = [
+            self.module.get_bin_path('pw', True),
+            'usermod',
+            '-n',
+            self.name 
+        ]
         cmd_len = len(cmd)
         info = self.user_info()
 
@@ -632,10 +648,12 @@ class FreeBsdUser(User):
 
         # we have to set the password in a second command
         if self.password is not None and info[1] != self.password:
-            cmd = [self.module.get_bin_path('chpass', True),
-                   '-p',
-                   self.password,
-                   self.name ]
+            cmd = [
+                self.module.get_bin_path('chpass', True),
+                '-p',
+                self.password,
+                self.name 
+            ]
             return self.execute_command(cmd)
 
         return (rc, out, err)
@@ -719,7 +737,7 @@ class SunOS(User):
                         continue
                     fields[1] = self.password
                     line = ':'.join(fields)
-                    lines.append('{0}\n'.format(line))
+                    lines.append('%s\n' % line)
                 open(self.SHADOWFILE, 'w+').writelines(lines)        
             except Exception, err:
                 self.module.fail_json(msg="failed to update users password: %s" % str(err))
@@ -801,13 +819,168 @@ class SunOS(User):
                         continue
                     fields[1] = self.password
                     line = ':'.join(fields)
-                    lines.append('{0}\n'.format(line))
+                    lines.append('%s\n' % line)
                 open(self.SHADOWFILE, 'w+').writelines(lines)        
                 rc = 0
             except Exception, err:
                 self.module.fail_json(msg="failed to update users password: %s" % str(err))
 
         return (rc, out, err)
+
+# ===========================================
+
+class AIX(User):
+    """
+    This is a AIX User manipulation class.
+
+    This overrides the following methods from the generic class:-
+      - create_user()
+      - remove_user()
+      - modify_user()
+    """
+
+    platform = 'AIX'
+    distribution = None
+    SHADOWFILE = '/etc/security/passwd'
+
+    def remove_user(self):
+        cmd = [self.module.get_bin_path('userdel', True)]
+        if self.remove:
+            cmd.append('-r')
+        cmd.append(self.name)
+
+        return self.execute_command(cmd)
+
+    def create_user_useradd(self, command_name='useradd'):
+        cmd = [self.module.get_bin_path(command_name, True)]
+
+        if self.uid is not None:
+            cmd.append('-u')
+            cmd.append(self.uid)
+
+        if self.group is not None:
+            if not self.group_exists(self.group):
+                self.module.fail_json(msg="Group %s does not exist" % self.group)
+            cmd.append('-g')
+            cmd.append(self.group)
+
+        if self.groups is not None:
+            for g in self.groups.split(','):
+                if not self.group_exists(g):
+                    self.module.fail_json(msg="Group %s does not exist" % (g))
+            cmd.append('-G')
+            cmd.append(self.groups)
+
+        if self.comment is not None:
+            cmd.append('-c')
+            cmd.append(self.comment)
+
+        if self.home is not None:
+            cmd.append('-d')
+            cmd.append(self.home)
+
+        if self.shell is not None:
+            cmd.append('-s')
+            cmd.append(self.shell)
+
+        if self.createhome:
+            cmd.append('-m')
+
+        if self.system:
+            cmd.append('-r')
+
+        cmd.append(self.name)
+        (rc, out, err) = self.execute_command(cmd)
+
+        # set password with chpasswd
+        if self.password is not None:
+            cmd = []
+            cmd.append('echo "'+self.name+':'+self.password+'" |')
+            cmd.append(self.module.get_bin_path('chpasswd', True))
+            cmd.append('-e')
+            cmd.append('-c')
+            self.execute_command(' '.join(cmd))
+
+        return (rc, out, err)
+
+    def modify_user_usermod(self):
+        cmd = [self.module.get_bin_path('usermod', True)]
+        info = self.user_info()
+
+        if self.uid is not None and info[2] != int(self.uid):
+            cmd.append('-u')
+            cmd.append(self.uid)
+
+        if self.group is not None:
+            if not self.group_exists(self.group):
+                self.module.fail_json(msg="Group %s does not exist" % self.group)
+            ginfo = self.group_info(self.group)
+            if info[3] != ginfo[2]:
+                cmd.append('-g')
+                cmd.append(self.group)
+
+        if self.groups is not None:
+            current_groups = self.user_group_membership()
+            groups = self.groups.split(',')
+            for g in groups:
+                if not self.group_exists(g):
+                    self.module.fail_json(msg="Group %s does not exist" % (g))
+
+            group_diff = set(sorted(current_groups)).symmetric_difference(set(sorted(groups)))
+            groups_need_mod = False
+
+            if group_diff:
+                if self.append:
+                    for g in groups:
+                        if g in group_diff:
+                            groups.extend(current_groups)
+                            set(groups)
+                            groups_need_mod = True
+                            break
+                else:
+                    groups_need_mod = True
+
+            if groups_need_mod:
+                cmd.append('-G')
+                cmd.append(','.join(groups))
+
+        if self.comment is not None and info[4] != self.comment:
+                cmd.append('-c')
+                cmd.append(self.comment)
+
+        if self.home is not None and info[5] != self.home:
+            cmd.append('-d')
+            cmd.append(self.home)
+
+        if self.shell is not None and info[6] != self.shell:
+            cmd.append('-s')
+            cmd.append(self.shell)
+
+
+        # skip if no changes to be made
+        if len(cmd) == 1:
+            (rc, out, err) = (None, '', '')
+        elif self.module.check_mode:
+            return (True, '', '')
+        else:
+            cmd.append(self.name)
+            (rc, out, err) = self.execute_command(cmd)
+
+        # set password with chpasswd
+        if self.password is not None and info[1] != self.password:
+            cmd = []
+            cmd.append('echo "'+self.name+':'+self.password+'" |')
+            cmd.append(self.module.get_bin_path('chpasswd', True))
+            cmd.append('-e')
+            cmd.append('-c')
+            (rc2, out2, err2) = self.execute_command(' '.join(cmd))
+        else:
+            (rc2, out2, err2) = (None, '', '')
+
+        if rc != None:
+            return (rc, out+out2, err+err2)
+        else:
+            return (rc2, out+out2, err+err2)
 
 # ===========================================
 
@@ -844,7 +1017,8 @@ def main():
             ssh_key_file=dict(default=None),
             ssh_key_comment=dict(default=ssh_defaults['comment']),
             ssh_key_passphrase=dict(default=None)
-        )
+        ),
+        supports_check_mode=True
     )
 
     user = User(module)
@@ -863,17 +1037,22 @@ def main():
     result['state'] = user.state
     if user.state == 'absent':
         if user.user_exists():
+            if module.check_mode:
+                module.exit_json(changed=True)
             (rc, out, err) = user.remove_user()
             if rc != 0:
-                module.fail_json(name=name, msg=err, rc=rc)
+                module.fail_json(name=user.name, msg=err, rc=rc)
             result['force'] = user.force
             result['remove'] = user.remove
     elif user.state == 'present':
         if not user.user_exists():
+            if module.check_mode:
+                module.exit_json(changed=True)
             (rc, out, err) = user.create_user()
             result['system'] = user.system
             result['createhome'] = user.createhome
         else:
+            # modify user (note: this function is check mode aware)
             (rc, out, err) = user.modify_user()
             result['append'] = user.append
         if rc is not None and rc != 0:

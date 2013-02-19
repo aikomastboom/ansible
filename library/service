@@ -36,9 +36,9 @@ options:
         required: false
         choices: [ started, stopped, restarted, reloaded ]
         description:
-          C(Started)/C(stopped) are idempotent actions that will not run
-          commands unless necessary.  C(restarted) will always bounce the
-          service.  C(reloaded) will always reload.
+          - C(started)/C(stopped) are idempotent actions that will not run
+            commands unless necessary.  C(restarted) will always bounce the
+            service.  C(reloaded) will always reload.
     pattern:
         required: false
         version_added: "0.7"
@@ -75,6 +75,7 @@ import platform
 import os
 import tempfile
 import shlex
+import select
 
 class Service(object):
     """
@@ -117,8 +118,8 @@ class Service(object):
         # select whether we dump additional debug info through syslog
         self.syslogging = False
 
-# ===========================================
-# Platform specific methods (must be replaced by subclass).
+    # ===========================================
+    # Platform specific methods (must be replaced by subclass).
 
     def get_service_tools(self):
         self.module.fail_json(msg="get_service_tools not implemented on target platform")
@@ -132,18 +133,87 @@ class Service(object):
     def service_control(self):
         self.module.fail_json(msg="service_control not implemented on target platform")
 
-# ===========================================
-# Generic methods that should be used on all platforms.
+    # ===========================================
+    # Generic methods that should be used on all platforms.
 
-    def execute_command(self, cmd):
+    def execute_command(self, cmd, daemonize=False):
         if self.syslogging:
             syslog.openlog('ansible-%s' % os.path.basename(__file__))
-            syslog.syslog(syslog.LOG_NOTICE, 'Command %s' % '|'.join(cmd))
+            syslog.syslog(syslog.LOG_NOTICE, 'Command %s, daemonize %r' % (cmd, daemonize))
 
-        p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        (out, err) = p.communicate()
-        rc = p.returncode
-        return (rc, out, err)
+        # Most things don't need to be daemonized
+        if not daemonize:
+            return self.module.run_command(cmd)
+
+        # This is complex because daemonization is hard for people.
+        # What we do is daemonize a part of this module, the daemon runs the
+        # command, picks up the return code and output, and returns it to the
+        # main process.
+        pipe = os.pipe()
+        pid = os.fork()
+        if pid == 0:
+            os.close(pipe[0])
+            # Set stdin/stdout/stderr to /dev/null
+            fd = os.open(os.devnull, os.O_RDWR)
+            if fd != 0:
+                os.dup2(fd, 0)
+            if fd != 1:
+                os.dup2(fd, 1)
+            if fd != 2:
+                os.dup2(fd, 2)
+            if fd not in (0, 1, 2):
+                os.close(fd)
+
+            # Make us a daemon. Yes, that's all it takes.
+            pid = os.fork()
+            if pid > 0:
+                os._exit(0)
+            os.setsid()
+            os.chdir("/")
+            pid = os.fork()
+            if pid > 0:
+                os._exit(0)
+
+            # Start the command
+            p = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=lambda: os.close(pipe[1]))
+            stdout = ""
+            stderr = ""
+            fds = [p.stdout, p.stderr]
+            # Wait for all output, or until the main process is dead and its output is done.
+            while fds:
+                rfd, wfd, efd = select.select(fds, [], fds, 1)
+                if not (rfd + wfd + efd) and p.poll() is not None:
+                    break
+                if p.stdout in rfd:
+                    dat = os.read(p.stdout.fileno(), 4096)
+                    if not dat:
+                        fds.remove(p.stdout)
+                    stdout += dat
+                if p.stderr in rfd:
+                    dat = os.read(p.stderr.fileno(), 4096)
+                    if not dat:
+                        fds.remove(p.stderr)
+                    stderr += dat
+            p.wait()
+            # Return a JSON blob to parent
+            os.write(pipe[1], json.dumps([p.returncode, stdout, stderr]))
+            os.close(pipe[1])
+            os._exit(0)
+        elif pid == -1:
+            self.module.fail_json(msg="unable to fork")
+        else:
+            os.close(pipe[1])
+            os.waitpid(pid, 0)
+            # Wait for data from daemon process and process it.
+            data = ""
+            while True:
+                rfd, wfd, efd = select.select([pipe[0]], [], [pipe[0]])
+                if pipe[0] in rfd:
+                    dat = os.read(pipe[0], 4096)
+                    if not dat:
+                        break
+                    data += dat
+            return json.loads(data)
 
     def check_ps(self):
         # Set ps flags
@@ -167,8 +237,8 @@ class Service(object):
                     break
 
     def check_service_changed(self):
-        if self.state and self.running == None:
-            self.module.fail_json(msg="failed determining the current service state => state stays unchanged")
+        if self.state and self.running is None:
+            self.module.fail_json(msg="failed determining service state, possible typo of service name?")
         # Find out if state has changed
         if not self.running and self.state in ["started", "running"]:
             self.changed = True
@@ -176,8 +246,11 @@ class Service(object):
             self.changed = True
         elif self.state == "restarted":
             self.changed = True
+        if self.module.check_mode and self.changed:
+            self.module.exit_json(changed=True, msg='service state changed')
 
     def modify_service_state(self):
+
         # Only do something if state will change
         if self.changed:
             # Control service
@@ -189,6 +262,9 @@ class Service(object):
                 self.action = "reload"
             elif self.state == 'restarted':
                 self.action = "restart"
+
+            if self.module.check_mode:
+                self.module.exit_json(changed=True, msg='changing service state')
 
             return self.service_control()
 
@@ -236,6 +312,10 @@ class Service(object):
             changed = True
 
         if changed is True:
+
+            if self.module.check_mode:
+                self.module.exit_json(changed=True, msg="changing service enablement")
+
             # Create a temporary file next to the current rc.conf (so we stay on the same filesystem).
             # This way the replacement operation is atomic.
             rcconf_dir = os.path.dirname(self.rcconf_file)
@@ -304,10 +384,11 @@ class LinuxService(Service):
             self.svc_initctl = location['initctl']
 
     def get_service_status(self):
-        rc, status_stdout, status_stderr = self.execute_command("%s %s status %s" % (self.svc_cmd, self.name, self.arguments))
+        self.action = "status"
+        rc, status_stdout, status_stderr = self.service_control()
 
-        # Check if we got upstart on the system and then the job state
-        if self.svc_initctl != None and self.running is None:
+        # Check if we have upstart on the system and then the job state
+        if self.svc_initctl and self.running is None:
             # check the job status by upstart response
             initctl_rc, initctl_status_stdout, initctl_status_stderr = self.execute_command("%s status %s" % (self.svc_initctl, self.name))
             if initctl_status_stdout.find("stop/waiting") != -1:
@@ -316,16 +397,14 @@ class LinuxService(Service):
                 self.running = True
 
         # if the job status is still not known check it by response code
-        if self.running == None:
-            if rc == 3:
-                self.running = False
-            if rc == 2:
+        if self.running is None:
+            if rc in [2, 3, 4, 69]:
                 self.running = False
             elif rc == 0:
                 self.running = True
 
         # if the job status is still not known check it by status output keywords
-        if self.running == None:
+        if self.running is None:
             # first tranform the status output that could irritate keyword matching
             cleanout = status_stdout.lower().replace(self.name.lower(), '')
             if "stop" in cleanout:
@@ -346,11 +425,14 @@ class LinuxService(Service):
                 self.running = False
 
         # if the job status is still not known check it by special conditions
-        if self.running == None:
+        if self.running is None:
             if self.name == 'iptables' and status_stdout.find("ACCEPT") != -1:
                 # iptables status command output is lame
                 # TODO: lookup if we can use a return code for this instead?
                 self.running = True
+
+        return self.running
+
 
     def service_enable(self):
         # we change argument depending on real binary used
@@ -371,7 +453,15 @@ class LinuxService(Service):
         else:
             args = (self.enable_cmd, self.name, on_off)
 
-        if self.enable is not None:
+        # FIXME: we need this function to detect whether to run the command
+        # so we need something to get the service enablement state here.
+
+        changed = True
+
+        if self.module.check_mode and changed:
+            self.module.exit_json(changed=True, msg="editing service enablement")
+
+        if self.enable is not None and changed:
             return self.execute_command("%s %s %s" % args)
 
     def service_control(self):
@@ -383,10 +473,10 @@ class LinuxService(Service):
             svc_cmd = "%s" % self.svc_initscript
 
         if self.action is not "restart":
-            rc_state, stdout, stderr = self.execute_command("%s %s %s" % (svc_cmd, self.action, self.arguments))
+            rc_state, stdout, stderr = self.execute_command("%s %s %s" % (svc_cmd, self.action, self.arguments), daemonize=True)
         else:
-            rc1, stdout1, stderr1 = self.execute_command("%s %s %s" % (svc_cmd, 'stop', self.arguments))
-            rc2, stdout2, stderr2 = self.execute_command("%s %s %s" % (svc_cmd, 'start', self.arguments))
+            rc1, stdout1, stderr1 = self.execute_command("%s %s %s" % (svc_cmd, 'stop', self.arguments), daemonize=True)
+            rc2, stdout2, stderr2 = self.execute_command("%s %s %s" % (svc_cmd, 'start', self.arguments), daemonize=True)
             if rc1 != 0 and rc2 == 0:
                 rc_state = rc2
                 stdout = stdout2
@@ -437,9 +527,14 @@ class FreeBsdService(Service):
         
         self.rcconf_key = "%s_enable" % self.name
 
+        # FIXME: detect the enablement state rather than just running the command
+        if self.module.check_mode:
+            self.module.exit_json(changed=True, msg="editing service enablement")
+
         return self.service_enable_rcconf()
 
     def service_control(self):
+
         if self.action is "start":
             self.action = "onestart"
         if self.action is "stop":
@@ -484,6 +579,69 @@ class OpenBsdService(Service):
         return self.execute_command("%s %s" % (self.svc_cmd, self.action))
 
 # ===========================================
+# Subclass: NetBSD
+
+class NetBsdService(Service):
+    """
+    This is the NetBSD Service manipulation class - it uses the /etc/rc.conf
+    file for controlling services started at boot, check status and perform
+    direct service manipulation. Init scripts in /etc/rcd are used for
+    controlling services (start/stop) as well as for controlling the current
+    state.
+    """
+
+    platform = 'NetBSD'
+    distribution = None
+
+    def get_service_tools(self):
+        initpaths = [ '/etc/rc.d' ]		# better: $rc_directories - how to get in here? Run: sh -c '. /etc/rc.conf ; echo $rc_directories'
+
+        for initdir in initpaths:
+            initscript = "%s/%s" % (initdir,self.name)
+            if os.path.isfile(initscript):
+                self.svc_initscript = initscript
+
+        if not self.svc_initscript:
+            self.module.fail_json(msg='unable to find rc.d script')
+
+    def service_enable(self):
+        if self.enable:
+            self.rcconf_value = "YES"
+        else:
+            self.rcconf_value = "NO"
+
+        # FIXME: need to decide whether to run enablement command or not
+        if self.module.check_mode:
+            self.module.exit_json(changed=True, msg="editing service enablement")
+
+        rcfiles = [ '/etc/rc.conf' ]		# Overkill?
+        for rcfile in rcfiles:
+            if os.path.isfile(rcfile):
+                self.rcconf_file = rcfile
+        
+        self.rcconf_key = "%s" % self.name
+
+        return self.service_enable_rcconf()
+
+    def get_service_status(self):
+        self.svc_cmd = "%s" % self.svc_initscript
+        rc, stdout, stderr = self.execute_command("%s %s" % (self.svc_cmd, 'onestatus'))
+        if rc == 1:
+            self.running = False
+        elif rc == 0:
+            self.running = True
+
+    def service_control(self):
+        if self.action is "start":
+            self.action = "onestart"
+        if self.action is "stop":
+            self.action = "onestop"
+
+        self.svc_cmd = "%s" % self.svc_initscript
+        return self.execute_command("%s %s" % (self.svc_cmd, self.action))
+
+
+# ===========================================
 # Main control flow
 
 def main():
@@ -494,7 +652,8 @@ def main():
             pattern = dict(required=False, default=None),
             enabled = dict(choices=BOOLEANS),
             arguments = dict(aliases=['args'], default=''),
-        )
+        ),
+        supports_check_mode=True
     )
 
     service = Service(module)
@@ -517,6 +676,8 @@ def main():
 
     # Enable/disable service startup at boot if requested
     if service.module.params['enabled']:
+        # FIXME: ideally this should detect if we need to toggle the enablement state, though
+        # it's unlikely the changed handler would need to fire in this case so it's a minor thing.
         service.service_enable()
 
     # Collect service status
@@ -539,8 +700,22 @@ def main():
     result['changed'] = service.changed
     if service.module.params['enabled']:
         result['enabled'] = service.module.params['enabled']
-    if service.state:
-        result['state'] = service.state
+
+    if not service.module.params['state']: 
+        status = service.get_service_status()
+        if status is None:
+            result['state'] = 'absent' 
+        elif status is False:
+            result['state'] = 'started'
+        else:
+            result['state'] = 'stopped'
+    else:
+        # as we may have just bounced the service the service command may not
+        # report accurate state at this moment so just show what we ran
+        if service.module.params['state'] in ['started','restarted']:
+            result['state'] = 'started'
+        else:
+            result['state'] = 'stopped'
 
     module.exit_json(**result)
 

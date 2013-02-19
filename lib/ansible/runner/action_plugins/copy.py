@@ -16,15 +16,9 @@
 # along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
-import pwd
-import random
-import traceback
-import tempfile
 
-import ansible.constants as C
 from ansible import utils
 from ansible import errors
-from ansible import module_common
 from ansible.runner.return_data import ReturnData
 
 class ActionModule(object):
@@ -32,17 +26,13 @@ class ActionModule(object):
     def __init__(self, runner):
         self.runner = runner
 
-    def run(self, conn, tmp, module_name, module_args, inject):
+    def run(self, conn, tmp, module_name, module_args, inject, complex_args=None, **kwargs):
         ''' handler for file transfer operations '''
 
         # load up options
         options = utils.parse_kv(module_args)
         source  = options.get('src', None)
         dest    = options.get('dest', None)
-
-        if dest.endswith("/"):
-            base = os.path.basename(source)
-            dest = os.path.join(dest, base)
 
         if (source is None and not 'first_available_file' in inject) or dest is None:
             result=dict(failed=True, msg="src and dest are required")
@@ -62,19 +52,33 @@ class ActionModule(object):
             if not found:
                 results=dict(failed=True, msg="could not find src in first_available_file list")
                 return ReturnData(conn=conn, result=results)
-
-        source = utils.template(self.runner.basedir, source, inject)
-        source = utils.path_dwim(self.runner.basedir, source)
+        else:
+            source = utils.template(self.runner.basedir, source, inject)
+            source = utils.path_dwim(self.runner.basedir, source)
 
         local_md5 = utils.md5(source)
         if local_md5 is None:
             result=dict(failed=True, msg="could not find src=%s" % source)
             return ReturnData(conn=conn, result=result)
 
+        if dest.endswith("/"):
+            base = os.path.basename(source)
+            dest = os.path.join(dest, base)
+
         remote_md5 = self.runner._remote_md5(conn, tmp, dest)
+        if remote_md5 == '3':
+            # Destination is a directory
+            dest = os.path.join(dest, os.path.basename(source))
+            remote_md5 = self.runner._remote_md5(conn, tmp, dest)
 
         exec_rc = None
         if local_md5 != remote_md5:
+
+            if self.runner.check:
+                # TODO: if the filesize is small, include a nice pretty-printed diff by 
+                # calling a (new) diff callback
+                return ReturnData(conn=conn, result=dict(changed=True))
+
             # transfer the file to a remote tmp location
             tmp_src = tmp + os.path.basename(source)
             conn.put_file(source, tmp_src)
@@ -92,5 +96,7 @@ class ActionModule(object):
 
             tmp_src = tmp + os.path.basename(source)
             module_args = "%s src=%s" % (module_args, tmp_src)
+            if self.runner.check:
+                module_args = "%s CHECKMODE=True" % module_args
             return self.runner._execute_module(conn, tmp, 'file', module_args, inject=inject)
 
