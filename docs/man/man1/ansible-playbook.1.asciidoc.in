@@ -47,11 +47,14 @@ The 'PATH' to the inventory hosts file, which defaults to
 
 *-M* 'DIRECTORY', *--module-path=*'DIRECTORY'::
 
-The 'DIRECTORY' to load modules from. The default is '/usr/share/ansible'.
+The 'DIRECTORY' search path to load modules from. The default is
+'/usr/share/ansible'. This can also be set with the ANSIBLE_LIBRARY
+environment variable.
 
 *-e* 'VARS', *--extra-vars=*'VARS'::
 
-Extra variables to inject into a playbook, in key=value key=value format.
+Extra variables to inject into a playbook, in key=value key=value format or
+as quoted JSON (hashes and arrays).
 
 *-f* 'NUM', *--forks=*'NUM'::
 
@@ -77,7 +80,7 @@ Desired sudo user (default=root).
 
 Run only these tags from the playbook
 
-*--check-syntax*::
+*--syntax-check*::
 
 Look for syntax errors in the playbook, but don't run anything
 
@@ -155,7 +158,7 @@ Ansible is released under the terms of the GPLv3 License.
 SEE ALSO
 --------
 
-*ansible*(1), *ansible-pull*(1)
+*ansible*(1), *ansible-pull*(1), *ansible-doc*(1)
 
 Extensive documentation as well as IRC and mailing list info
 is available on the ansible home page: <https://ansible.github.com/>

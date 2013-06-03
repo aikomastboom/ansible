@@ -16,7 +16,8 @@
 # along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
-
+import pipes
+from ansible.utils import template
 from ansible import utils
 from ansible import errors
 from ansible.runner.return_data import ReturnData
@@ -37,7 +38,11 @@ class ActionModule(object):
             raise errors.AnsibleError("in current versions of ansible, templates are only usable in playbooks")
 
         # load up options
-        options  = utils.parse_kv(module_args)
+        options  = {}
+        if complex_args:
+            options.update(complex_args)
+        options.update(utils.parse_kv(module_args))
+
         source   = options.get('src', None)
         dest     = options.get('dest', None)
 
@@ -51,17 +56,26 @@ class ActionModule(object):
         if 'first_available_file' in inject:
             found = False
             for fn in self.runner.module_vars.get('first_available_file'):
-                fnt = utils.template(self.runner.basedir, fn, inject)
+                fn_orig = fn
+                fnt = template.template(self.runner.basedir, fn, inject)
                 fnd = utils.path_dwim(self.runner.basedir, fnt)
+                if not os.path.exists(fnd) and '_original_file' in inject:
+                    fnd = utils.path_dwim_relative(inject['_original_file'], 'templates', fn_orig, self.runner.basedir, check=False)
                 if os.path.exists(fnd):
-                    source = fnt
+                    source = fnd
                     found = True
                     break
             if not found:
                 result = dict(failed=True, msg="could not find src in first_available_file list")
                 return ReturnData(conn=conn, comm_ok=False, result=result)
         else:
-            source = utils.template(self.runner.basedir, source, inject)
+            source = template.template(self.runner.basedir, source, inject)
+                
+            if '_original_file' in inject:
+                source = utils.path_dwim_relative(inject['_original_file'], 'templates', source, self.runner.basedir)
+            else:
+                source = utils.path_dwim(self.runner.basedir, source)
+
 
         if dest.endswith("/"):
             base = os.path.basename(source)
@@ -69,7 +83,7 @@ class ActionModule(object):
 
         # template the source data locally & get ready to transfer
         try:
-            resultant = utils.template_from_file(self.runner.basedir, source, inject)
+            resultant = template.template_from_file(self.runner.basedir, source, inject)
         except Exception, e:
             result = dict(failed=True, msg=str(e))
             return ReturnData(conn=conn, comm_ok=False, result=result)
@@ -82,7 +96,7 @@ class ActionModule(object):
             # template is different from the remote value
 
             # if showing diffs, we need to get the remote value
-            dest_contents = None
+            dest_contents = ''
 
             if self.runner.diff:
                 # using persist_files to keep the temp directory around to avoid needing to grab another
@@ -93,8 +107,6 @@ class ActionModule(object):
                         dest_contents = base64.b64decode(dest_contents)
                     else:
                         raise Exception("unknown encoding, failed: %s" % dest_result.result)
-                else:
-                    dest_result = ''
  
             xfered = self.runner._transfer_str(conn, tmp, 'source', resultant)
 
@@ -103,15 +115,14 @@ class ActionModule(object):
                 self.runner._low_level_exec_command(conn, "chmod a+r %s" % xfered, tmp)
 
             # run the copy module
-            module_args = "%s src=%s dest=%s" % (module_args, xfered, dest)
+            module_args = "%s src=%s dest=%s original_basename=%s" % (module_args, pipes.quote(xfered), pipes.quote(dest), pipes.quote(os.path.basename(source)))
 
             if self.runner.check:
-                return ReturnData(conn=conn, comm_ok=True, result=dict(changed=True), before_diff_value=dest_contents, after_diff_value=resultant)
+                return ReturnData(conn=conn, comm_ok=True, result=dict(changed=True), diff=dict(before_header=dest, after_header=source, before=dest_contents, after=resultant))
             else:
-                res = self.runner._execute_module(conn, tmp, 'copy', module_args, inject=inject)
-                res.before_diff_value = dest_contents
-                res.after_diff_value = resultant
+                res = self.runner._execute_module(conn, tmp, 'copy', module_args, inject=inject, complex_args=complex_args)
+                res.diff = dict(before=dest_contents, after=resultant)
                 return res
         else:
-            return ReturnData(conn=conn, comm_ok=True, result=dict(changed=False))
+            return self.runner._execute_module(conn, tmp, 'file', module_args, inject=inject, complex_args=complex_args)
 

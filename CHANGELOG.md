@@ -1,53 +1,274 @@
 Ansible Changes By Release
 ==========================
 
-1.1 "Mean Street" -- Release pending
+1.2 "Right Now" -- release pending
 
-* added 'with_random_choice' filter plugin
+Core Features:
+
+* capability to set 'all_errors_fatal: True' in a playbook to force any error to stop execution versus
+  a whole group or serial block needing to fail
+  usable, without breaking the ability to override in ansible
+* ability to use variables from {{ }} syntax in mainline playbooks, new 'when' conditional, as detailed
+  in documentation.  Can disable old style replacements in ansible.cfg if so desired, but are still active
+  by default.
+* can set ansible_private_key_file as an inventory variable (similar to ansible_ssh_host, etc)
+* 'when' statement can be affixed to task includes to auto-affix the conditional to each task therein
+* cosmetic: "*****" banners in ansible-playbook output are now constant width
+* --limit can now be given a filename (--limit @filename) to constrain a run to a host list on disk
+* failed playbook runs will create a retry file in /var/tmp/ansible usable with --limit
+* roles allow easy arrangement of reusable tasks/handlers/files/templates
+* pre_tasks and post_tasks allow for separating tasks into blocks where handlers will fire around them automatically
+* "meta: flush_handler" task capability added for when you really need to force handlers to run
+* new --start-at-task option to ansible playbook allows starting at a specific task name in a long playbook
+* added a log file for ansible/ansible-playbook, set 'log_path' in the configuration file or ANSIBLE_LOG_PATH in environment
+* debug mode always outputs debug in playbooks, without needing to specify -v
+* external inventory script added for Spacewalk / Red Hat Satellite servers
+* It is now possible to feed JSON structures to --extra-vars.  Pass in a JSON dictionary/hash to feed in complex data.
+* group_vars/ and host_vars/ directories can now be kept alongside the playbook as well as inventory (or both!)
+* more filters: ability to say {{ foo|success }} and {{ foo|failed }} and when: foo|success and when: foo|failed
+* more filters: {{ path|basename }} and {{ path|dirname }}
+* lookup plugins now use the basedir of the file they have included from, avoiding needs of ../../../ in places and
+increasing the ease at which things can be reorganized.  
+
+Modules added:
+
+* cloud: rax: module for creating instances in the rackspace cloud (uses pyrax)
+* packages: npm: node.js package management
+* packages: pkgng: next-gen package manager for FreeBSD
+* database: postgresql_priv: manages postgresql priveledges
+* networking: bigip_pool: load balancing with F5s
+* networking: ec2_elb: add and remove machines from ec2 elastic load balancers
+* notification: hipchat: send notification events to hipchat
+* notification: flowdock: send messages to flowdock during playbook runs
+* notification: campfire: send messages to campfire during playbook runs
+* notification: mqtt: send messages to the Mosquitto message bus
+* notification: irc: send messages to IRC channels
+* notification: filesystem - a wrapper around mkfs
+* notification: jabber: send jabber chat messages
+* notification: osx_say: make OS X say things out loud
+* openstack: keystone_user
+* openstack: glance_image
+* openstack: nova_compute
+* openstack: nova_keypair
+* openstack: quantum_floating_ip
+* openstack: quantum_floating_ip_associate
+* openstack: quantum_network
+* openstack: quantum_router
+* openstack: quantum_router_gateway
+* openstack: quantum_router_interface
+* openstack: quantum_subnet
+* monitoring: newrelic_deployment: notifies newrelic of new deployments
+* monitoring: airbrake_deployment - notify airbrake of new deployments
+* monitoring: pingdom
+* monitoring: pagerduty
+* monitoring: monit
+* utility: set_fact: sets a variable, which can be the result of a template evaluation
+
+Modules removed
+
+* vagrant -- can't be compatible with both versions at once, just run things though the vagrant provisioner in vagrant core
+
+Bugfixes and Misc Changes:
+
+* service module happier if only enabled=yes|no specified and no state
+* mysql_db: use --password= instead of -p in dump/import so it doesn't go interactive if no pass set
+* when using -c ssh and the ansible user is the current user, don't pass a -o to allow SSH config to be
+* overwrite parameter added to the s3 module
+* private_ip parameter added to the ec2 module
+* $FILE and $PIPE now tolerate unicode
+* various plugin loading operations have been made more efficient
+* hostname now uses platform.node versus socket.gethostname to be more consistant with Unix 'hostname'
+* fix for SELinux operations on Unicode path names
+* inventory directory locations now ignore files with .ini extensions, making hybrid inventory easier
+* copy module in check-mode now reports back correct changed status when used with force=no
+* added avail. zone to ec2 module
+* fixes to the hash variable merging logic if so enabled in the main settings file (default is to replace, not merge hashes)
+* group_vars and host_vars files can now end in a .yaml or .yml extension, (previously required no extension, still favored)
+* ec2vol module improvements
+* if the user module is told to generate the ssh key, the key generated is now returned in the results
+* misc fixes to the Riak module
+* make template module slightly more efficient
+* base64encode / decode filters are now available to templates
+* libvirt module can now work with multiple different libvirt connecton URIs
+* fix for postgresql password escaping
+* unicode fix for shlex.split in some cases
+* apt module upgrade logic improved
+* URI module now can follow redirects
+* yum module can now install off http URLs
+* sudo password now defaults to ssh password if you ask for both and just hit enter on the second prompt
+* validate feature on copy and template module, for example, running visudo prior to copying the file over
+* network facts upgraded to return advanced configs (bonding, etc)
+* region support added to ec2 module
+* riak module gets a wait for ring option
+* improved check mode support in the file module
+* exception handling added to handle scenario when attempt to log to systemd journal fails
+* fix for upstart handling when toggling the enablement and running bits at the same time
+* when registering a task with a conditional attached, and the task is skipped by the conditional,
+the variable is still registered for the host, with the attribute skipped: True.
+* delegate_to tasks can look up ansible_ssh_private_key_file variable from inventory correctly now
+* s3 module takes a 'dest' parameter to change the destination for uploads
+* apt module gets a cache_valid_time option to avoid redundant cache updates
+* ec2 module better understands security groups
+* fix for postgresql codec usage
+* setup module now tolerant of OpenVZ interfaces
+* check mode reporting improved for files and directories
+* doc system now reports on module requirements
+* group_by module can now also make use of globally scoped variables
+* localhost and 127.0.0.1 are now fuzzy matched in inventory (are now more or less interchangeable)
+* AIX improvements/fixes for users, groups, facts
+* lineinfile now does atomic file replacements
+* fix to not pass PasswordAuthentication=no in the config file unneccessarily for SSH connection type
+* for for authorized_key on Debian Squeeze
+* fixes for apt_repository module reporting changed incorrectly on certain repository types
+* allow the virtualenv argument to the pip module to be a pathname
+* service pattern argument now correctly read for BSD services
+* fetch location can now be controlled more directly via the 'flat' parameter.
+* added basename and dirname as Jinja2 filters available to all templates
+* pip works better when sudoing from unpriveledged users
+* fix for user creation with groups specification reporting 'changed' incorrectly in some cases
+* fix for some unicode encoding errors in outputing some data in verbose mode
+* improved FreeBSD, NetBSD and Solaris facts
+* debug module always outputs data without having to specify -v
+* fix for sysctl module creating new keys (must specify checks=none)
+
+1.1 "Mean Street" -- 4/2/2013
+
+Core Features
+
 * added --check option for "dry run" mode
-* added --diff option to show how templates change, or might change
-* service status 4 is also 'not running'
+* added --diff option to show how templates or copied files change, or might change
+* --list-tasks for the playbook will list the tasks without running them
+* able to set the environment by setting "environment:" as a dictionary on any task (go proxy support!)
+* added ansible_ssh_user and ansible_ssh_pass for per-host/group username and password
+* jinja2 extensions can now be loaded from the config file
+* support for complex arguments to modules (within reason)
+* can specify ansible_connection=X to define the connection type in inventory variables
+* a new chroot connection type
+* module common code now has basic type checking (and casting) capability
+* module common now supports a 'no_log' attribute to mark a field as not to be syslogged
+* inventory can now point to a directory containing multiple scripts/hosts files, if using this, put group_vars/host_vars directories inside this directory
+* added configurable crypt scheme for 'vars_prompt'
+* password generating lookup plugin -- $PASSWORD(path/to/save/data/in)
+* added --step option to ansible-playbook, works just like Linux interactive startup!
+
+Modules Added:
+
+* bzr (bazaar version control)
+* cloudformation
+* django-manage
+* gem (ruby gems)
+* homebrew
+* lvg (logical volume groups)
+* lvol (LVM logical volumes)
+* macports
+* mongodb_user
+* netscaler
+* okg
+* openbsd_pkg
+* rabbit_mq_plugin
+* rabbit_mq_user
+* rabbit_mq_vhost
+* rabbit_mq_parameter
+* rhn_channel
+* s3 -- allows putting file contents in buckets for sharing over s3
+* uri module -- can get/put/post/etc
+* vagrant -- launching VMs with vagrant, this is different from existing vagrant plugin
+* zfs
+
+Bugfixes and Misc Changes:
+
 * stderr shown when commands fail to parse
 * uses yaml.safe_dump in filter plugins
-* authentication Q&A no longer happens before --syntax-check
+* authentication Q&A no longer happens before --syntax-check, but after
 * ability to get hostvars data for nodes not in the setup cache yet
-* able to specify a different hg repo to pull from than the original set
 * SSH timeout now correctly passed to native SSH connection plugin
-* supervisorctl restart fix
 * raise an error when multiple when_ statements are provided
 * --list-hosts applies host limit selections better
 * (internals) template engine specifications to use template_ds everywhere
-* rabbit_mq plugin module
-* rabbit_mq user module
-* rabbit_mq vhost module
-* mongodb_user module
+* better error message when your host file can not be found
+* end of line comments now work in the inventory file
+* directory destinations now work better with remote md5 code
+* lookup plugin macros like $FILE and $ENV now work without returning arrays in variable definitions/playbooks
+* uses yaml.safe_load everywhere
+* able to add EXAMPLES to documentation via EXAMPLES docstring, rather than just in main documentation YAML
+* can set ANSIBLE_COW_SELECTION to pick other cowsay types (including random)
+* to_nice_yaml and to_nice_json available as Jinja2 filters that indent and sort
+* cowsay able to run out of macports (very important!)
+* improved logging for fireball mode
+* nicer error message when talking to an older system that needs a JSON module installed
+* 'magic' variable 'inventory_basedir' now gives path to inventory file
+* 'magic' variable 'vars' works like 'hostvars' but gives global scope variables, useful for debugging in templates mostly
+* conditionals can be used on plugins like add_host
+* developers: all callbacks now have access to a ".runner" and ".playbook", ".play", and ".task" object (use getattr, they may not always be set!)
+
+Facts:
+
+* block device facts for the setup module
+* facts for AIX
+* fact detection for OS type on Amazon Linux
+* device fact gathering stability improvements
+* ansible_os_family fact added
+* user_id (remote user name)
+* a whole series of current time information under the 'datetime' hash
+* more OS X facts
+* support for detecting Alpine Linux
+* added facts for OpenBSD
+
+Module Changes/Fixes:
+
+* ansible module common code (and ONLY that) which is mixed in with modules, is now BSD licensed.  App remains GPLv3.
+* service code works better on platforms that mix upstart, systemd, and system-v
+* service enablement idempotence fixes for systemd and upstart
+* service status 4 is also 'not running'
+* supervisorctl restart fix
 * increased error handling for ec2 module
 * can recursively set permissions on directories
-* change to the way AMI tags are handled
-* better error message when your host file can't be found
-* --list-tasks for the playbook will list the tasks without running them
-* block device facts for the setup module
+* ec2: change to the way AMI tags are handled
 * cron module can now also manipulate cron.d files
 * virtualenv module can now inherit system site packages (or not)
-* able to set the environment by setting "environment:" as a dictionary on any task (go proxy support!)
-* added ansible_ssh_user and ansible_ssh_pass for per-host/group username and password
-* facts for AIX
-* new uri module -- can get/put/post/etc
-* fact detection for OS type on Amazon Linux
-* jinja2 extensions can now be loaded from the config file
 * lineinfile module now has an insertbefore option
 * NetBSD service module support
-* end of line comments now work in the inventory file
 * fixes to sysctl module where item has multiple values
 * AIX support for the user and group modules
-* directory destinations now work better with remote md5 code
-* device fact gathering stability improvements
-* fixed ~ expansion for fileglob
-* can set ansible_ssh_user and ansible_ssh_pass in inventory variables
-* lookup plugin macros like $FILE and $ENV now work without returning arrays in variable definitions/playbooks
+* able to specify a different hg repo to pull from than the original set
 * add_host module can set ports and other inventory variables
 * add_host module can add modules to multiple groups (groups=a,b,c), groups now alias for groupname
-* support for complex arguments to modules (within reason)
+* subnet ID can be set on EC2 module
+* MySQL module password handling improvements
+* added new virtualenv flags to pip and easy_install modules
+* various improvements to lineinfile module, now accepts common arguments from file
+* force= now replaces thirsty where used before, thirsty remains an alias
+* setup module can take a 'filter=<wildcard>' parameter to just return a few facts (not used by playbooks)
+* cron module works even if no crontab is present (for cron.d)
+* security group ID settable on EC2 module
+* misc fixes to sysctl module
+* fix to apt module so packages not in cache are still removable
+* charset fix to mail module
+* postresql db module now does not try to create the 'PUBLIC' user
+* SVN module now works correctly with self signed certs
+* apt module now has an upgrade parameter (values=yes, no, or 'dist')
+* nagios module gets new silence/unsilence commands
+* ability to disable proxy usage in get_url (use_proxy=no)
+* more OS X facts
+* added a 'fail_on_missing' (default no) option to fetch
+* added timeout to the uri module (default 30 seconds, adjustable)
+* ec2 now has a 'wait' parameter to wait for the instance to be active, eliminates need for separate wait_for call.
+* allow regex backreferences in lineinfile
+* id attribute on ec2 module can be used to set idempotent-do-not-recreate launches
+* icinga support for nagios module
+* fix default logins when no my.conf for MySQL module
+* option to create users with non-unique UIDs (user module)
+* macports module can enable/disable packages
+* quotes in my.cnf are stripped by the MySQL modules
+* Solaris Service management added
+* service module will attempt to auto-add unmanaged chkconfig services when needed
+* service module supports systemd service unit files
+
+Plugins:
+
+* added 'with_random_choice' filter plugin
+* fixed ~ expansion for fileglob
+* with_nested allows for nested loops (see examples in examples/playbooks)
 
 1.0 "Eruption" -- Feb 1 2013
 
@@ -147,7 +368,7 @@ Other core changes:
 
 * fix for template calls when last character is '$'
 * if ansible_python_interpreter is set on a delegated host, it now works as intended
-* --limit can now take "," as seperator as well as ";" or ":"
+* --limit can now take "," as separator as well as ";" or ":"
 * msg is now displaced with newlines when a task fails
 * if any with_ plugin has no results in a list (empty list for with_items, etc), the task is now skipped
 * various output formatting fixes/improvements
@@ -205,7 +426,7 @@ Plugin changes:
 * plugin loading code now more streamlined
 * lookup plugins for DNS text records, environment variables, and redis
 * added a template lookup plugin $TEMPLATE('filename.j2')
-* various tweaks to the EC2 inventory plugin 
+* various tweaks to the EC2 inventory plugin
 * jinja2 filters are now pluggable so it's easy to write your own (to_json/etc, are now impl. as such)
 
 0.8 "Cathedral" -- Oct 19, 2012
@@ -444,7 +665,7 @@ internals:
 * support for older versions of python-apt in the apt module
 * a new "assemble" module, for constructing files from pieces of files (inspired by Puppet "fragments" idiom)
 * ability to override most default values with ANSIBLE_FOO environment variables
-* --module-path parameter can support multiple directories seperated with the OS path seperator
+* --module-path parameter can support multiple directories separated with the OS path separator
 * with_items can take a variable of type list
 * ansible_python_interpreter variable available for systems with more than one Python
 * BIOS and VMware "fact" upgrades

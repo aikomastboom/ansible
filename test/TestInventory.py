@@ -13,6 +13,7 @@ class TestInventory(unittest.TestCase):
         self.large_range_inventory_file = os.path.join(self.test_dir, 'large_range')
         self.complex_inventory_file     = os.path.join(self.test_dir, 'complex_hosts')
         self.inventory_script           = os.path.join(self.test_dir, 'inventory_api.py')
+        self.inventory_dir              = os.path.join(self.test_dir, 'inventory_dir')
 
         os.chmod(self.inventory_script, 0755)
 
@@ -38,6 +39,9 @@ class TestInventory(unittest.TestCase):
 
     def complex_inventory(self):
         return Inventory(self.complex_inventory_file)
+
+    def dir_inventory(self):
+        return Inventory(self.inventory_dir)
 
     all_simple_hosts=['jupiter', 'saturn', 'zeus', 'hera',
             'cerberus001','cerberus002','cerberus003',
@@ -272,7 +276,7 @@ class TestInventory(unittest.TestCase):
                         'inventory_hostname_short': 'thor'}
 
     def test_hosts_list(self):
-        """Test the case when playbook 'hosts' var is a list."""
+        # Test the case when playbook 'hosts' var is a list.
         inventory = self.script_inventory()
         host_names = sorted(['thor', 'loki', 'odin'])       # Not sure if sorting is in the contract or not
         actual_hosts = inventory.get_hosts(host_names)
@@ -288,3 +292,14 @@ class TestInventory(unittest.TestCase):
         assert vars == {'inventory_hostname': 'zeus',
                         'inventory_hostname_short': 'zeus',
                         'group_names': ['greek', 'major-god']}
+
+    def test_dir_inventory(self):
+        inventory = self.dir_inventory()
+        vars = inventory.get_variables('zeus')
+
+        print "VARS=%s" % vars
+
+        assert vars == {'inventory_hostname': 'zeus',
+                        'inventory_hostname_short': 'zeus',
+                        'group_names': ['greek', 'major-god', 'ungrouped'],
+                        'var_a': '1#2'}

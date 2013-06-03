@@ -1,4 +1,4 @@
-%if 0%{?rhel} <= 5
+%if 0%{?rhel} && 0%{?rhel} <= 5
 %{!?python_sitelib: %global python_sitelib %(%{__python} -c "from distutils.sysconfig import get_python_lib; print(get_python_lib())")}
 BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-buildroot
 %endif
@@ -6,19 +6,27 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-%{release}-buildroot
 Name: ansible
 Release: 1%{?dist}
 Summary: SSH-based configuration management, deployment, and task execution system
-Version: 1.1
+Version: 1.2
 
 Group: Development/Libraries
 License: GPLv3
-Source0: https://github.com/downloads/ansible/ansible/%{name}-%{version}.tar.gz
-Url: http://ansible.github.com
+Source0: http://ansible.cc/releases/%{name}-%{version}.tar.gz
+Url: http://ansible.cc
 
 BuildArch: noarch
+%if 0%{?rhel} && 0%{?rhel} <= 5
+BuildRequires: python26-devel
+
+Requires: python26-PyYAML
+Requires: python26-paramiko
+Requires: python26-jinja2
+%else
 BuildRequires: python2-devel
 
 Requires: PyYAML
 Requires: python-paramiko
 Requires: python-jinja2
+%endif
 
 %description
 
@@ -32,8 +40,13 @@ are transferred to managed machines automatically.
 Summary: Ansible fireball transport support
 Group: Development/Libraries
 Requires: %{name} = %{version}-%{release}
+%if 0%{?rhel} && 0%{?rhel} <= 5
+Requires: python26-keyczar
+Requires: python26-zmq
+%else
 Requires: python-keyczar
 Requires: python-zmq
+%endif
 
 %description fireball
 
@@ -44,8 +57,13 @@ multiple actions, but requires additional supporting packages.
 %package node-fireball
 Summary: Ansible fireball transport - node end support
 Group: Development/Libraries
+%if 0%{?rhel} && 0%{?rhel} <= 5
+Requires: python26-keyczar
+Requires: python26-zmq
+%else
 Requires: python-keyczar
 Requires: python-zmq
+%endif
 
 %description node-fireball
 
@@ -68,7 +86,7 @@ mkdir -p $RPM_BUILD_ROOT/%{_mandir}/{man1,man3}/
 cp -v docs/man/man1/*.1 $RPM_BUILD_ROOT/%{_mandir}/man1/
 cp -v docs/man/man3/*.3 $RPM_BUILD_ROOT/%{_mandir}/man3/
 mkdir -p $RPM_BUILD_ROOT/%{_datadir}/ansible
-cp -v library/* $RPM_BUILD_ROOT/%{_datadir}/ansible/
+cp -rv library/* $RPM_BUILD_ROOT/%{_datadir}/ansible/
 
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -78,19 +96,19 @@ rm -rf $RPM_BUILD_ROOT
 %{python_sitelib}/ansible*
 %{_bindir}/ansible*
 %dir %{_datadir}/ansible
-%{_datadir}/ansible/[a-eg-z]*
-%{_datadir}/ansible/f[a-hj-z]*
-%{_datadir}/ansible/file
+%{_datadir}/ansible/*/*
+#%{_datadir}/ansible/*/f[a-hj-z]*
+#%{_datadir}/ansible/*/file
 %config(noreplace) %{_sysconfdir}/ansible
 %doc README.md PKG-INFO COPYING
 %doc %{_mandir}/man1/ansible*
-%doc %{_mandir}/man3/ansible.[a-eg-z]*
-%doc %{_mandir}/man3/ansible.f[a-hj-z]*
-%doc %{_mandir}/man3/ansible.file*
+%doc %{_mandir}/man3/ansible.*
+#%doc %{_mandir}/man3/ansible.f[a-hj-z]*
+#%doc %{_mandir}/man3/ansible.file*
 %doc examples/playbooks
 
 %files fireball
-%{_datadir}/ansible/fireball
+%{_datadir}/ansible/utilities/fireball
 %doc %{_mandir}/man3/ansible.fireball.*
 
 %files node-fireball
@@ -98,8 +116,11 @@ rm -rf $RPM_BUILD_ROOT
 
 %changelog
 
-* Fri Feb 1 2013 Michael DeHaan <michael.dehaan@gmail.com> - 1.1-0
+* Tue Apr 2 2013 Michael DeHaan <michael.dehaan@gmail.com> - 1.2-0
 * release pending
+
+* Tue Apr 2 2013 Michael DeHaan <michael.dehaan@gmail.com> - 1.1-0
+* Release 1.1
 
 * Fri Feb 1 2013 Michael DeHaan <michael.dehaan@gmail.com> - 1.0-0
 - Release 1.0
